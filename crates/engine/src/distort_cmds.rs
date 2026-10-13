@@ -194,16 +194,18 @@ fn stored_warp_area(planes: &[Plane], canvas: Rect) -> Rect {
     if !(x0 <= x1 && y0 <= y1) {
         return Rect::EMPTY;
     }
-    let (ex, ey) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
-    let grow = |r: [f64; 4], mx: f64, my: f64| {
+    // One extent for both axes: a corner wall's planes are a 150 px strip the height of the
+    // room, and half their width is less than the wall beside them that the mask shows.
+    let extent = (x1 - x0).max(y1 - y0).max(1.0);
+    let grow = |r: [f64; 4], m: f64| {
         let clamp = |v: f64| v.clamp(f64::from(i32::MIN / 2), f64::from(i32::MAX / 2));
-        Rect::new(clamp((r[0] - mx).floor()) as i32, clamp((r[1] - my).floor()) as i32, clamp((r[2] + mx).ceil()) as i32, clamp((r[3] + my).ceil()) as i32)
+        Rect::new(clamp((r[0] - m).floor()) as i32, clamp((r[1] - m).floor()) as i32, clamp((r[2] + m).ceil()) as i32, clamp((r[3] + m).ceil()) as i32)
     };
-    let around = grow([x0, y0, x1, y1], PLANE_MARGIN * ex, PLANE_MARGIN * ey);
+    let around = grow([x0, y0, x1, y1], PLANE_MARGIN * extent);
     if canvas.is_empty() {
         return around;
     }
-    let near = grow([f64::from(canvas.x0), f64::from(canvas.y0), f64::from(canvas.x1), f64::from(canvas.y1)], CANVAS_MARGIN * ex, CANVAS_MARGIN * ey);
+    let near = grow([f64::from(canvas.x0), f64::from(canvas.y0), f64::from(canvas.x1), f64::from(canvas.y1)], CANVAS_MARGIN * extent);
     around.intersect(&near)
 }
 

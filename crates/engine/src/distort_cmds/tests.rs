@@ -357,9 +357,10 @@ fn liquify_with_a_far_off_stroke_point_returns() {
 fn a_stored_warp_looks_only_around_its_planes_and_near_the_canvas() {
     let plane = |src: [[f64; 2]; 4]| Plane { src, dst: src };
     let canvas = Rect::new(0, 0, 1000, 800);
-    // One wall plane 200 px wide at the right edge: half its extent around it, a tenth of it past the canvas.
+    // One wall plane 200 px wide and 600 tall at the right edge: half its longer extent around
+    // it, a tenth of it past the canvas.
     let a = stored_warp_area(&[plane([[800.0, 100.0], [1000.0, 100.0], [1000.0, 700.0], [800.0, 700.0]])], canvas);
-    assert_eq!(a, Rect::new(700, -60, 1020, 860));
+    assert_eq!(a, Rect::new(500, -60, 1060, 860));
     // Far off the canvas there is nothing to map.
     let far = stored_warp_area(&[plane([[5000.0, 0.0], [5100.0, 0.0], [5100.0, 100.0], [5000.0, 100.0]])], canvas);
     assert!(far.is_empty());
