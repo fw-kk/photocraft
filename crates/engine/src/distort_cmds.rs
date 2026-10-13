@@ -220,7 +220,12 @@ fn perspective_within(surf: &Surface, planes: &[Plane], interp: Interp, area: Re
         return surf.clone();
     }
     let Some(m) = PerspectiveMap::new(planes) else { return surf.clone() };
+    let m = m.with_surroundings(rect_bounds(area));
     warp_mesh_surface(surf, area, &|x, y| m.map(x, y), interp)
+}
+
+fn rect_bounds(r: Rect) -> [f64; 4] {
+    [f64::from(r.x0), f64::from(r.y0), f64::from(r.x1), f64::from(r.y1)]
 }
 
 /// Smart-filter hook: re-applies a stored Liquify / Puppet / Perspective Warp to a rendered
@@ -391,9 +396,9 @@ fn perspective(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
         return Ok(json!({"layer": id.0, "changed": false, "planes": planes}));
     }
     let it = interp(p);
-    let map = PerspectiveMap::new(&planes);
     let mask_fn = |m: &Surface, sel: Option<&Surface>| {
-        let Some(map) = &map else { return Ok(m.clone()) };
+        // The mask follows the pixels, surroundings included, over the mask's own extent.
+        let Some(map) = PerspectiveMap::new(&planes).map(|map| map.with_surroundings(rect_bounds(m.content_bounds()))) else { return Ok(m.clone()) };
         let f = |x, y| map.map(x, y);
         let whole = |m: &Surface| Ok(warp_mesh_gray(m, &f, Interp::Bilinear));
         match sel {
