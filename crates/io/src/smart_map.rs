@@ -39,6 +39,8 @@ use crate::blocks::{enum_of, get_desc, num};
 mod camera_raw;
 #[path = "displace_map.rs"]
 mod displace;
+#[path = "perspective_warp_map.rs"]
+mod perspective_warp;
 
 pub use displace::embedded_map as displace_embedded_map;
 
@@ -322,6 +324,7 @@ pub fn filter_from_item(item: &Descriptor) -> SmartFilter {
     let known = match class.as_deref() {
         Some(camera_raw::CLASS) => camera_raw::import_params(item).map(|p| (camera_raw::COMMAND, p)),
         Some(displace::CLASS) => displace::import_params(item).map(|p| (displace::COMMAND, p)),
+        Some(perspective_warp::CLASS) => perspective_warp::import_params(item).map(|p| (perspective_warp::COMMAND, p)),
         c => c.and_then(|c| known_params(c, fltr)),
     };
     let (command, params) = match known {
@@ -469,6 +472,12 @@ pub fn item_for_filter(f: &SmartFilter) -> Result<Descriptor, String> {
     }
     if f.command == displace::COMMAND {
         let mut d = displace::export_item(&f.params)?;
+        set(&mut d, "blendOptions", blend_options(f));
+        set(&mut d, "enab", Value::Boolean(f.visible));
+        return Ok(d);
+    }
+    if f.command == perspective_warp::COMMAND {
+        let mut d = perspective_warp::export_item(&f.params)?;
         set(&mut d, "blendOptions", blend_options(f));
         set(&mut d, "enab", Value::Boolean(f.visible));
         return Ok(d);

@@ -170,7 +170,7 @@ pub fn apply_filter_to_surface(
     canvas: photocraft_geom::Rect,
 ) -> Option<photocraft_raster::Surface> {
     // Liquify / Puppet Warp / Perspective Warp smart filters (distort_cmds).
-    if let Some(out) = crate::distort_cmds::apply_to_surface(id, params, surf, canvas) {
+    if let Some(out) = crate::distort_cmds::apply_to_surface(id, params, surf, bounds, canvas) {
         return Some(out);
     }
     // Lens Correction / Adaptive Wide Angle / Camera Raw smart filters (lens_cmds).

@@ -352,3 +352,18 @@ fn liquify_with_a_far_off_stroke_point_returns() {
         assert_eq!(active_surface(&s).read_region(Rect::new(0, 0, 80, 60)), before.read_region(Rect::new(0, 0, 80, 60)), "{depth}: off-canvas only");
     }
 }
+
+#[test]
+fn a_stored_warp_looks_only_around_its_planes_and_near_the_canvas() {
+    let plane = |src: [[f64; 2]; 4]| Plane { src, dst: src };
+    let canvas = Rect::new(0, 0, 1000, 800);
+    // One wall plane 200 px wide at the right edge: half its extent around it, a tenth of it past the canvas.
+    let a = stored_warp_area(&[plane([[800.0, 100.0], [1000.0, 100.0], [1000.0, 700.0], [800.0, 700.0]])], canvas);
+    assert_eq!(a, Rect::new(700, -60, 1020, 860));
+    // Far off the canvas there is nothing to map.
+    let far = stored_warp_area(&[plane([[5000.0, 0.0], [5100.0, 0.0], [5100.0, 100.0], [5000.0, 100.0]])], canvas);
+    assert!(far.is_empty());
+    // Without a canvas the planes' neighbourhood alone bounds it.
+    let free = stored_warp_area(&[plane([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]])], Rect::EMPTY);
+    assert_eq!(free, Rect::new(-50, -50, 150, 150));
+}

@@ -164,16 +164,70 @@ pub fn puppet_surface(surf: &Surface, w: &PuppetWarp, interp: Interp) -> Option<
 /// Perspective-warps a surface's content.
 pub fn perspective_surface(surf: &Surface, planes: &[Plane], interp: Interp) -> Surface {
     let b = surf.content_bounds();
-    if PerspectiveMap::is_identity(planes) || b.is_empty() {
+    if b.is_empty() {
+        return surf.clone();
+    }
+    perspective_within(surf, planes, interp, b)
+}
+
+/// Each plane's neighbourhood: this far beyond the planes' extent, as a share of it, the map still
+/// stands for a surface the user drew; further out it is the planes' projection run to a
+/// vanishing line.
+const PLANE_MARGIN: f64 = 0.5;
+/// This far past the canvas, as a share of the planes' extent, is as far as a stored warp looks:
+/// what lands on the canvas from further out than that came in through a plane's edge anyway.
+const CANVAS_MARGIN: f64 = 0.1;
+
+/// The part of the content a stored Perspective Warp maps: the planes grown by [`PLANE_MARGIN`],
+/// within the canvas grown by [`CANVAS_MARGIN`]. A placed mural many times the canvas in size,
+/// warped onto a wall through a plane that runs steep towards its vanishing point, otherwise
+/// forward-maps its far corners to a blown-up quad kilometres of pixels wide, and takes minutes
+/// or all the memory to do it (a 4 m wide hallway's mural at 15 GB).
+fn stored_warp_area(planes: &[Plane], canvas: Rect) -> Rect {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in planes.iter().flat_map(|q| q.src.iter()) {
+        x0 = x0.min(p[0]);
+        y0 = y0.min(p[1]);
+        x1 = x1.max(p[0]);
+        y1 = y1.max(p[1]);
+    }
+    if !(x0 <= x1 && y0 <= y1) {
+        return Rect::EMPTY;
+    }
+    let (ex, ey) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+    let grow = |r: [f64; 4], mx: f64, my: f64| {
+        let clamp = |v: f64| v.clamp(f64::from(i32::MIN / 2), f64::from(i32::MAX / 2));
+        Rect::new(clamp((r[0] - mx).floor()) as i32, clamp((r[1] - my).floor()) as i32, clamp((r[2] + mx).ceil()) as i32, clamp((r[3] + my).ceil()) as i32)
+    };
+    let around = grow([x0, y0, x1, y1], PLANE_MARGIN * ex, PLANE_MARGIN * ey);
+    if canvas.is_empty() {
+        return around;
+    }
+    let near = grow([f64::from(canvas.x0), f64::from(canvas.y0), f64::from(canvas.x1), f64::from(canvas.y1)], CANVAS_MARGIN * ex, CANVAS_MARGIN * ey);
+    around.intersect(&near)
+}
+
+/// A stored Perspective Warp re-applied to a rendered smart object: the content within
+/// [`stored_warp_area`] is warped and the rest left out, as the content outside a filter's
+/// frame is.
+pub fn perspective_stored(surf: &Surface, planes: &[Plane], interp: Interp, canvas: Rect) -> Surface {
+    perspective_within(surf, planes, interp, surf.content_bounds().intersect(&stored_warp_area(planes, canvas)))
+}
+
+/// Warps the content within `area`; an empty area leaves nothing.
+fn perspective_within(surf: &Surface, planes: &[Plane], interp: Interp, area: Rect) -> Surface {
+    if PerspectiveMap::is_identity(planes) {
         return surf.clone();
     }
     let Some(m) = PerspectiveMap::new(planes) else { return surf.clone() };
-    warp_mesh_surface(surf, b, &|x, y| m.map(x, y), interp)
+    warp_mesh_surface(surf, area, &|x, y| m.map(x, y), interp)
 }
 
 /// Smart-filter hook: re-applies a stored Liquify / Puppet / Perspective Warp to a rendered
-/// smart object (`None` for other ids).
-pub fn apply_to_surface(id: &str, params: &Value, surf: &Surface, canvas: Rect) -> Option<Surface> {
+/// smart object (`None` for other ids). `bounds` is the document's canvas (or the selection a
+/// filter was added under); `canvas` is the extent neighbourhood filters repeat edges at, which
+/// for a smart object takes in all of its placed content.
+pub fn apply_to_surface(id: &str, params: &Value, surf: &Surface, bounds: Rect, canvas: Rect) -> Option<Surface> {
     match id {
         LIQUIFY => {
             let (strokes, cell) = liquify_params(id, params, canvas).ok()?;
@@ -181,7 +235,8 @@ pub fn apply_to_surface(id: &str, params: &Value, surf: &Surface, canvas: Rect) 
         }
         // A stored warp too far to render leaves the smart object as it is (#1019).
         PUPPET | PUPPET_SMART => Some(puppet_surface(surf, &puppet_params(id, params).ok()?, interp(params)).unwrap_or_else(|| surf.clone())),
-        PERSPECTIVE | PERSPECTIVE_SMART => Some(perspective_surface(surf, &perspective_params(id, params).ok()?, interp(params))),
+        PERSPECTIVE => Some(perspective_surface(surf, &perspective_params(id, params).ok()?, interp(params))),
+        PERSPECTIVE_SMART => Some(perspective_stored(surf, &perspective_params(id, params).ok()?, interp(params), bounds)),
         _ => None,
     }
 }
