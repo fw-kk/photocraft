@@ -799,6 +799,18 @@ fn path_param<'a>(cmd: &str, p: &'a Value) -> Result<&'a str> {
 }
 
 /// Instances sharing contents in this document, including those inside groups.
+/// Whether two sources hold the same contents: the same embedded bytes under the same name, or
+/// the same linked path.
+fn same_source(a: &SmartSource, b: &SmartSource) -> bool {
+    match (a, b) {
+        (SmartSource::Embedded { file_name: x, bytes: p }, SmartSource::Embedded { file_name: y, bytes: q }) => {
+            x == y && (Arc::ptr_eq(p, q) || p.as_slice() == q.as_slice())
+        }
+        (SmartSource::Linked { path: x }, SmartSource::Linked { path: y }) => x == y,
+        _ => false,
+    }
+}
+
 fn instances(doc: &Document, contents_id: SmartContentsId) -> Vec<LayerId> {
     doc.walk().into_iter().filter_map(|(_, _, l)| matches!(&l.content, LayerContent::Smart(sm) if sm.contents_id == contents_id).then_some(l.id)).collect()
 }
@@ -816,6 +828,13 @@ fn set_shared_source(s: &mut Session, id: LayerId, label: &str, keep_psd: bool, 
     let (parent, contents_id) = s.edit(label, |doc, _| {
         let contents_id = smart(doc, id)?.contents_id;
         for instance in instances(doc, contents_id) {
+            // FW: an instance already holding these very contents is left as it is. A
+            // Replace Contents per copy of a shared smart object (what a headless caller does
+            // for a PSD whose copies it cannot tell are shared) otherwise re-renders every
+            // instance on every call: N copies cost N² renders, 75 copies 45 s instead of 2.
+            if same_source(&smart(doc, instance)?.source, &new) {
+                continue;
+            }
             smart_mut(doc, instance)?.source = new.clone();
             if !keep_psd {
                 detach_psd(doc.layer_mut(instance).ok_or(EngineError::NoLayer(instance))?);
