@@ -825,6 +825,10 @@ fn set_source(s: &mut Session, p: &Value, label: &str, keep_psd: bool, make: imp
 
 // Keep the shared-instance transaction out of the per-command source-builder instantiations.
 fn set_shared_source(s: &mut Session, id: LayerId, label: &str, keep_psd: bool, new: SmartSource) -> Result<Value> {
+    set_shared_source_sized(s, id, label, keep_psd, new, None)
+}
+
+fn set_shared_source_sized(s: &mut Session, id: LayerId, label: &str, keep_psd: bool, new: SmartSource, size: Option<(f64, f64)>) -> Result<Value> {
     let (parent, contents_id) = s.edit(label, |doc, _| {
         let contents_id = smart(doc, id)?.contents_id;
         for instance in instances(doc, contents_id) {
@@ -834,6 +838,9 @@ fn set_shared_source(s: &mut Session, id: LayerId, label: &str, keep_psd: bool, 
             // instance on every call: N copies cost N² renders, 75 copies 45 s instead of 2.
             if same_source(&smart(doc, instance)?.source, &new) {
                 continue;
+            }
+            if let Some(size) = size {
+                recentre(smart_mut(doc, instance)?, size);
             }
             smart_mut(doc, instance)?.source = new.clone();
             if !keep_psd {
@@ -858,8 +865,24 @@ fn replace_contents(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Replace Contents from a file's name and bytes: what the desktop and web file pickers hand over.
 pub fn replace_contents_bytes(s: &mut Session, id: LayerId, file_name: &str, bytes: Vec<u8>) -> Result<Value> {
-    decode_source(file_name, &bytes)?; // fail before touching the document
-    set_shared_source(s, id, "Replace Contents", false, SmartSource::Embedded { file_name: file_name.to_string(), bytes: Arc::new(bytes) })
+    let decoded = decode_source(file_name, &bytes)?; // fail before touching the document
+    let size = (f64::from(decoded.size.width), f64::from(decoded.size.height));
+    drop(decoded);
+    set_shared_source_sized(s, id, "Replace Contents", false, SmartSource::Embedded { file_name: file_name.to_string(), bytes: Arc::new(bytes) }, Some(size))
+}
+
+/// FW: Photoshop's Replace Contents with contents of another size keeps the instance's centre:
+/// the new source is placed at the old one's scale, centred where the old one was. The size the
+/// placement was made for is the imported placed-layer block's `Sz  `; an instance without one
+/// (made here, or already replaced) keeps its placement as it is.
+fn recentre(sm: &mut SmartObject, new_size: (f64, f64)) {
+    let Some((old_w, old_h)) = sm.psd_raw.as_deref().and_then(|raw| photocraft_io::blocks::placed_source_size(raw)) else { return };
+    let (dx, dy) = ((old_w - new_size.0) / 2.0, (old_h - new_size.1) / 2.0);
+    if dx.abs() < 1e-9 && dy.abs() < 1e-9 {
+        return;
+    }
+    let shifted = placement(sm).mul(&affine_homography(&Affine::translate(dx, dy)));
+    set_placement(sm, shifted);
 }
 
 /// The file name and bytes of smart object `id`'s contents.

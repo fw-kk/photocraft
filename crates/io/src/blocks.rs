@@ -621,6 +621,18 @@ pub fn parse_smart(key: &[u8; 4], data: &[u8]) -> (String, Affine) {
     (id, affine)
 }
 
+/// FW: the source size a `SoLd` / `SoLE` block's placement was made for (`Sz  `: Wdth, Hght),
+/// from the block's data as a smart object keeps it (`psd_raw`, starting `soLD`).
+pub fn placed_source_size(data: &[u8]) -> Option<(f64, f64)> {
+    if data.get(..4) != Some(b"soLD") {
+        return None;
+    }
+    let d = data.get(8..).and_then(parse_prefix_versioned)?;
+    let sz = get_desc(&d, "Sz  ")?;
+    let (w, h) = (num(sz.get("Wdth"))?, num(sz.get("Hght"))?);
+    (w > 0.0 && h > 0.0).then_some((w, h))
+}
+
 /// The projective placement of a `SoLd` / `SoLE` block whose corners aren't a parallelogram
 /// (Distort, Perspective): source pixels → document pixels, row-major 3×3. Read from
 /// `nonAffineTransform` (the placed corners), else `Trnf`. `None` for affine placements, which
